@@ -1,5 +1,4 @@
-import { UseBoundStore } from 'zustand'
-import { RootState } from '../core/store'
+import { RootState, RootStore } from '../core/store'
 import { EventManager, Events, createEvents, DomEvent } from '../core/events'
 
 const DOM_EVENTS = {
@@ -16,7 +15,7 @@ const DOM_EVENTS = {
 } as const
 
 /** Default R3F event manager for web */
-export function createPointerEvents(store: UseBoundStore<RootState>): EventManager<HTMLElement> {
+export function createPointerEvents(store: RootStore): EventManager<HTMLElement> {
   const { handlePointer } = createEvents(store)
 
   return {
@@ -34,24 +33,32 @@ export function createPointerEvents(store: UseBoundStore<RootState>): EventManag
       (acc, key) => ({ ...acc, [key]: handlePointer(key) }),
       {},
     ) as unknown as Events,
+    update: () => {
+      const { events, internal } = store.getState()
+      if (internal.lastEvent?.current && events.handlers) events.handlers.onPointerMove(internal.lastEvent.current)
+    },
     connect: (target: HTMLElement) => {
       const { set, events } = store.getState()
       events.disconnect?.()
       set((state) => ({ events: { ...state.events, connected: target } }))
-      Object.entries(events?.handlers ?? []).forEach(([name, event]) => {
-        const [eventName, passive] = DOM_EVENTS[name as keyof typeof DOM_EVENTS]
-        target.addEventListener(eventName, event, { passive })
-      })
+      if (events.handlers) {
+        for (const name in events.handlers) {
+          const event = events.handlers[name as keyof typeof events.handlers]
+          const [eventName, passive] = DOM_EVENTS[name as keyof typeof DOM_EVENTS]
+          target.addEventListener(eventName, event, { passive })
+        }
+      }
     },
     disconnect: () => {
       const { set, events } = store.getState()
       if (events.connected) {
-        Object.entries(events.handlers ?? []).forEach(([name, event]) => {
-          if (events && events.connected instanceof HTMLElement) {
+        if (events.handlers) {
+          for (const name in events.handlers) {
+            const event = events.handlers[name as keyof typeof events.handlers]
             const [eventName] = DOM_EVENTS[name as keyof typeof DOM_EVENTS]
             events.connected.removeEventListener(eventName, event)
           }
-        })
+        }
         set((state) => ({ events: { ...state.events, connected: undefined } }))
       }
     },

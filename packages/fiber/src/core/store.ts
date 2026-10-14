@@ -1,23 +1,29 @@
 import * as THREE from 'three'
 import * as React from 'react'
-import create, { GetState, SetState, StoreApi, UseBoundStore } from 'zustand'
-import { prepare } from './renderer'
-import { DomEvent, EventManager, PointerCaptureTarget, ThreeEvent } from './events'
-import { calculateDpr } from './utils'
+import { type StoreApi } from 'zustand'
+import { createWithEqualityFn, type UseBoundStoreWithEqualityFn } from 'zustand/traditional'
+import type { DomEvent, EventManager, PointerCaptureTarget, ThreeEvent } from './events'
+import { calculateDpr, type Camera, isOrthographicCamera, updateCamera } from './utils'
 
 export interface Intersection extends THREE.Intersection {
   eventObject: THREE.Object3D
 }
 
 export type Subscription = {
-  ref: React.MutableRefObject<RenderCallback>
+  ref: React.RefObject<RenderCallback>
   priority: number
-  store: UseBoundStore<RootState, StoreApi<RootState>>
+  store: RootStore
 }
 
 export type Dpr = number | [min: number, max: number]
-export type Size = { width: number; height: number }
-export type Viewport = Size & {
+export interface Size {
+  width: number
+  height: number
+  top: number
+  left: number
+}
+export type Frameloop = 'always' | 'demand' | 'never'
+export interface Viewport extends Size {
   /** The initial pixel ratio */
   initialDpr: number
   /** Current pixel ratio */
@@ -30,10 +36,9 @@ export type Viewport = Size & {
   aspect: number
 }
 
-export type Camera = THREE.OrthographicCamera | THREE.PerspectiveCamera
-export type RenderCallback = (state: RootState, delta: number, frame?: THREE.XRFrame) => void
+export type RenderCallback = (state: RootState, delta: number, frame?: XRFrame) => void
 
-export type Performance = {
+export interface Performance {
   /** Current performance normal, between min and max */
   current: number
   /** How low the performance can go, between 0 and max */
@@ -46,39 +51,39 @@ export type Performance = {
   regress: () => void
 }
 
-export type Renderer = { render: (scene: THREE.Scene, camera: THREE.Camera) => any }
+export interface Renderer {
+  render: (scene: THREE.Scene, camera: THREE.Camera) => any
+}
+export { isRenderer } from './renderer'
 
-export const isRenderer = (def: any) => !!def?.render
-export const isOrthographicCamera = (def: any): def is THREE.OrthographicCamera =>
-  def && (def as THREE.OrthographicCamera).isOrthographicCamera
-
-export type InternalState = {
-  active: boolean
-  priority: number
-  frames: number
-  lastEvent: React.MutableRefObject<DomEvent | null>
+export interface InternalState {
   interaction: THREE.Object3D[]
   hovered: Map<string, ThreeEvent<DomEvent>>
   subscribers: Subscription[]
   capturedMap: Map<number, Map<THREE.Object3D, PointerCaptureTarget>>
   initialClick: [x: number, y: number]
   initialHits: THREE.Object3D[]
-  subscribe: (
-    callback: React.MutableRefObject<RenderCallback>,
-    priority: number,
-    store: UseBoundStore<RootState, StoreApi<RootState>>,
-  ) => () => void
+  lastEvent: React.RefObject<DomEvent | null>
+  active: boolean
+  priority: number
+  frames: number
+  subscribe: (callback: React.RefObject<RenderCallback>, priority: number, store: RootStore) => () => void
 }
 
-export type RootState = {
+export interface XRManager {
+  connect: () => void
+  disconnect: () => void
+}
+
+export interface RootState {
   /** Set current state */
-  set: SetState<RootState>
+  set: StoreApi<RootState>['setState']
   /** Get current state */
-  get: GetState<RootState>
+  get: StoreApi<RootState>['getState']
   /** The instance of the renderer */
   gl: THREE.WebGLRenderer
   /** Default camera */
-  camera: Camera & { manual?: boolean }
+  camera: Camera
   /** Default scene */
   scene: THREE.Scene
   /** Default raycaster */
@@ -88,22 +93,21 @@ export type RootState = {
   /** Event layer interface, contains the event handler and the node they're connected to */
   events: EventManager<any>
   /** XR interface */
-  xr: { connect: () => void; disconnect: () => void }
+  xr: XRManager
   /** Currently used controls */
   controls: THREE.EventDispatcher | null
   /** Normalized event coordinates */
   pointer: THREE.Vector2
   /** @deprecated Normalized event coordinates, use "pointer" instead! */
   mouse: THREE.Vector2
-  /* Whether to enable r139's THREE.ColorManagement.legacyMode */
+  /* Whether to enable r139's THREE.ColorManagement */
   legacy: boolean
-  /** Shortcut to gl.outputEncoding = LinearEncoding */
+  /** Shortcut to gl.outputColorSpace = THREE.LinearSRGBColorSpace */
   linear: boolean
   /** Shortcut to gl.toneMapping = NoTonemapping */
   flat: boolean
   /** Render loop flags */
-  frameloop: 'always' | 'demand' | 'never'
-  /** Adaptive performance interface */
+  frameloop: Frameloop
   performance: Performance
   /** Reactive pixel-size of the canvas */
   size: Size
@@ -116,32 +120,34 @@ export type RootState = {
     ) => Omit<Viewport, 'dpr' | 'initialDpr'>
   }
   /** Flags the canvas for render, but doesn't render in itself */
-  invalidate: () => void
+  invalidate: (frames?: number) => void
   /** Advance (render) one step */
   advance: (timestamp: number, runGlobalEffects?: boolean) => void
   /** Shortcut to setting the event layer */
   setEvents: (events: Partial<EventManager<any>>) => void
   /** Shortcut to manual sizing */
-  setSize: (width: number, height: number) => void
+  setSize: (width: number, height: number, top?: number, left?: number) => void
   /** Shortcut to manual setting the pixel ratio */
   setDpr: (dpr: Dpr) => void
-  /** Shortcut to frameloop flags */
-  setFrameloop: (frameloop?: 'always' | 'demand' | 'never') => void
+  /** Shortcut to setting frameloop flags */
+  setFrameloop: (frameloop: Frameloop) => void
   /** When the canvas was clicked but nothing was hit */
   onPointerMissed?: (event: MouseEvent) => void
-  /** If this state model is layerd (via createPortal) then this contains the previous layer */
-  previousRoot?: UseBoundStore<RootState, StoreApi<RootState>>
+  /** If this state model is layered (via createPortal) then this contains the previous layer */
+  previousRoot?: RootStore
   /** Internals */
   internal: InternalState
 }
 
-const context = React.createContext<UseBoundStore<RootState>>(null!)
+export type RootStore = UseBoundStoreWithEqualityFn<StoreApi<RootState>>
 
-const createStore = (
-  invalidate: (state?: RootState) => void,
-  advance: (timestamp: number, runGlobalEffects?: boolean, state?: RootState, frame?: THREE.XRFrame) => void,
-): UseBoundStore<RootState> => {
-  const rootState = create<RootState>((set, get) => {
+export const context = /* @__PURE__ */ React.createContext<RootStore>(null!)
+
+export const createStore = (
+  invalidate: (state?: RootState, frames?: number) => void,
+  advance: (timestamp: number, runGlobalEffects?: boolean, state?: RootState, frame?: XRFrame) => void,
+): RootStore => {
+  const rootStore = createWithEqualityFn<RootState>((set, get) => {
     const position = new THREE.Vector3()
     const defaultTarget = new THREE.Vector3()
     const tempTarget = new THREE.Vector3()
@@ -149,19 +155,19 @@ const createStore = (
       camera: Camera = get().camera,
       target: THREE.Vector3 | Parameters<THREE.Vector3['set']> = defaultTarget,
       size: Size = get().size,
-    ) {
-      const { width, height } = size
+    ): Omit<Viewport, 'dpr' | 'initialDpr'> {
+      const { width, height, top, left } = size
       const aspect = width / height
-      if (target instanceof THREE.Vector3) tempTarget.copy(target)
-      else tempTarget.set(...target)
+      if ((target as THREE.Vector3).isVector3) tempTarget.copy(target as THREE.Vector3)
+      else tempTarget.set(...(target as Parameters<THREE.Vector3['set']>))
       const distance = camera.getWorldPosition(position).distanceTo(tempTarget)
       if (isOrthographicCamera(camera)) {
-        return { width: width / camera.zoom, height: height / camera.zoom, factor: 1, distance, aspect }
+        return { width: width / camera.zoom, height: height / camera.zoom, top, left, factor: 1, distance, aspect }
       } else {
         const fov = (camera.fov * Math.PI) / 180 // convert vertical fov to radians
         const h = 2 * Math.tan(fov / 2) * distance // visible height
         const w = h * (width / height)
-        return { width: w, height: h, factor: width / w, distance, aspect }
+        return { width: w, height: h, top, left, factor: width / w, distance, aspect }
       }
     }
 
@@ -171,7 +177,7 @@ const createStore = (
 
     const pointer = new THREE.Vector2()
 
-    return {
+    const rootState: RootState = {
       set,
       get,
 
@@ -180,15 +186,15 @@ const createStore = (
       camera: null as unknown as Camera,
       raycaster: null as unknown as THREE.Raycaster,
       events: { priority: 1, enabled: true, connected: false },
-      xr: null as unknown as { connect: () => void; disconnect: () => void },
+      scene: null as unknown as THREE.Scene,
+      xr: null as unknown as XRManager,
 
-      invalidate: () => invalidate(get()),
+      invalidate: (frames = 1) => invalidate(get(), frames),
       advance: (timestamp: number, runGlobalEffects?: boolean) => advance(timestamp, runGlobalEffects, get()),
 
       legacy: false,
       linear: false,
       flat: false,
-      scene: prepare<THREE.Scene>(new THREE.Scene()),
 
       controls: null,
       clock: new THREE.Clock(),
@@ -217,12 +223,14 @@ const createStore = (
         },
       },
 
-      size: { width: 0, height: 0 },
+      size: { width: 0, height: 0, top: 0, left: 0 },
       viewport: {
         initialDpr: 0,
         dpr: 0,
         width: 0,
         height: 0,
+        top: 0,
+        left: 0,
         aspect: 0,
         distance: 0,
         factor: 0,
@@ -231,9 +239,9 @@ const createStore = (
 
       setEvents: (events: Partial<EventManager<any>>) =>
         set((state) => ({ ...state, events: { ...state.events, ...events } })),
-      setSize: (width: number, height: number) => {
+      setSize: (width: number, height: number, top: number = 0, left: number = 0) => {
         const camera = get().camera
-        const size = { width, height }
+        const size = { width, height, top, left }
         set((state) => ({ size, viewport: { ...state.viewport, ...getCurrentViewport(camera, defaultTarget, size) } }))
       },
       setDpr: (dpr: Dpr) =>
@@ -241,7 +249,7 @@ const createStore = (
           const resolved = calculateDpr(dpr)
           return { viewport: { ...state.viewport, dpr: resolved, initialDpr: state.viewport.initialDpr || resolved } }
         }),
-      setFrameloop: (frameloop: 'always' | 'demand' | 'never' = 'always') => {
+      setFrameloop: (frameloop: Frameloop = 'always') => {
         const clock = get().clock
 
         // if frameloop === "never" clock.elapsedTime is updated using advance(timestamp)
@@ -254,93 +262,79 @@ const createStore = (
         }
         set(() => ({ frameloop }))
       },
-
       previousRoot: undefined,
       internal: {
-        active: false,
-        priority: 0,
-        frames: 0,
-        lastEvent: React.createRef(),
-
+        // Events
         interaction: [],
         hovered: new Map<string, ThreeEvent<DomEvent>>(),
         subscribers: [],
         initialClick: [0, 0],
         initialHits: [],
         capturedMap: new Map(),
+        lastEvent: React.createRef(),
 
-        subscribe: (
-          ref: React.MutableRefObject<RenderCallback>,
-          priority: number,
-          store: UseBoundStore<RootState, StoreApi<RootState>>,
-        ) => {
-          set(({ internal }) => ({
-            internal: {
-              ...internal,
-              // If this subscription was given a priority, it takes rendering into its own hands
-              // For that reason we switch off automatic rendering and increase the manual flag
-              // As long as this flag is positive there can be no internal rendering at all
-              // because there could be multiple render subscriptions
-              priority: internal.priority + (priority > 0 ? 1 : 0),
-              // Register subscriber and sort layers from lowest to highest, meaning,
-              // highest priority renders last (on top of the other frames)
-              subscribers: [...internal.subscribers, { ref, priority, store }].sort((a, b) => a.priority - b.priority),
-            },
-          }))
+        // Updates
+        active: false,
+        frames: 0,
+        priority: 0,
+        subscribe: (ref: React.RefObject<RenderCallback>, priority: number, store: RootStore) => {
+          const internal = get().internal
+          // If this subscription was given a priority, it takes rendering into its own hands
+          // For that reason we switch off automatic rendering and increase the manual flag
+          // As long as this flag is positive there can be no internal rendering at all
+          // because there could be multiple render subscriptions
+          internal.priority = internal.priority + (priority > 0 ? 1 : 0)
+          internal.subscribers.push({ ref, priority, store })
+          // Register subscriber and sort layers from lowest to highest, meaning,
+          // highest priority renders last (on top of the other frames)
+          internal.subscribers = internal.subscribers.sort((a, b) => a.priority - b.priority)
           return () => {
-            set(({ internal }) => ({
-              internal: {
-                ...internal,
-                // Decrease manual flag if this subscription had a priority
-                priority: internal.priority - (priority > 0 ? 1 : 0),
-                // Remove subscriber from list
-                subscribers: internal.subscribers.filter((s) => s.ref !== ref),
-              },
-            }))
+            const internal = get().internal
+            if (internal?.subscribers) {
+              // Decrease manual flag if this subscription had a priority
+              internal.priority = internal.priority - (priority > 0 ? 1 : 0)
+              // Remove subscriber from list
+              internal.subscribers = internal.subscribers.filter((s) => s.ref !== ref)
+            }
           }
         },
       },
     }
+
+    return rootState
   })
 
-  const state = rootState.getState()
+  const state = rootStore.getState()
 
-  // Resize camera and renderer on changes to size and pixelratio
   let oldSize = state.size
   let oldDpr = state.viewport.dpr
-  rootState.subscribe(() => {
-    const { camera, size, viewport, gl } = rootState.getState()
-    if (size !== oldSize || viewport.dpr !== oldDpr) {
-      // https://github.com/pmndrs/react-three-fiber/issues/92
-      // Do not mess with the camera if it belongs to the user
-      if (!camera.manual) {
-        if (isOrthographicCamera(camera)) {
-          camera.left = size.width / -2
-          camera.right = size.width / 2
-          camera.top = size.height / 2
-          camera.bottom = size.height / -2
-        } else {
-          camera.aspect = size.width / size.height
-        }
-        camera.updateProjectionMatrix()
-        // https://github.com/pmndrs/react-three-fiber/issues/178
-        // Update matrix world since the renderer is a frame late
-        camera.updateMatrixWorld()
-      }
-      // Update renderer
-      gl.setPixelRatio(viewport.dpr)
-      gl.setSize(size.width, size.height)
+  let oldCamera = state.camera
+  rootStore.subscribe(() => {
+    const { camera, size, viewport, gl, set } = rootStore.getState()
 
+    // Resize camera and renderer on changes to size and pixelratio
+    if (size.width !== oldSize.width || size.height !== oldSize.height || viewport.dpr !== oldDpr) {
       oldSize = size
       oldDpr = viewport.dpr
+      // Update camera & renderer
+      updateCamera(camera, size)
+      if (viewport.dpr > 0) gl.setPixelRatio(viewport.dpr)
+
+      const updateStyle = typeof HTMLCanvasElement !== 'undefined' && gl.domElement instanceof HTMLCanvasElement
+      gl.setSize(size.width, size.height, updateStyle)
+    }
+
+    // Update viewport once the camera changes
+    if (camera !== oldCamera) {
+      oldCamera = camera
+      // Update viewport
+      set((state) => ({ viewport: { ...state.viewport, ...state.viewport.getCurrentViewport(camera) } }))
     }
   })
 
   // Invalidate on any change
-  rootState.subscribe((state) => invalidate(state))
+  rootStore.subscribe((state) => invalidate(state))
 
   // Return root state
-  return rootState
+  return rootStore
 }
-
-export { createStore, context }

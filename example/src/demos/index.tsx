@@ -1,6 +1,6 @@
 import { lazy } from 'react'
 
-const Animation = { Component: lazy(() => import('./Animation')) }
+const Activity = { Component: lazy(() => import('./Activity')) }
 const AutoDispose = { Component: lazy(() => import('./AutoDispose')) }
 const ClickAndHover = { Component: lazy(() => import('./ClickAndHover')) }
 const ContextMenuOverride = { Component: lazy(() => import('./ContextMenuOverride')) }
@@ -16,6 +16,7 @@ const Pointcloud = { Component: lazy(() => import('./Pointcloud')) }
 const Reparenting = { Component: lazy(() => import('./Reparenting')) }
 const ResetProps = { Component: lazy(() => import('./ResetProps')) }
 const Selection = { Component: lazy(() => import('./Selection')) }
+const ShaderMaterial = { Component: lazy(() => import('./ShaderMaterial')) }
 const StopPropagation = { Component: lazy(() => import('./StopPropagation')) }
 const SuspenseAndErrors = { Component: lazy(() => import('./SuspenseAndErrors')) }
 const SuspenseMaterial = { Component: lazy(() => import('./SuspenseMaterial')) }
@@ -24,9 +25,12 @@ const Test = { Component: lazy(() => import('./Test')) }
 const Viewcube = { Component: lazy(() => import('./Viewcube')) }
 const Portals = { Component: lazy(() => import('./Portals')) }
 const ViewTracking = { Component: lazy(() => import('./ViewTracking')) }
+const ChangeTexture = { Component: lazy(() => import('./ChangeTexture')) }
+const WebGPU = { Component: lazy(() => import('./WebGPU')) }
+const FlushSync = { Component: lazy(() => import('./FlushSync')) }
 
 export {
-  Animation,
+  Activity,
   AutoDispose,
   ClickAndHover,
   ContextMenuOverride,
@@ -41,6 +45,7 @@ export {
   Reparenting,
   ResetProps,
   Selection,
+  ShaderMaterial,
   StopPropagation,
   SuspenseAndErrors,
   SuspenseMaterial,
@@ -50,4 +55,7 @@ export {
   MultiView,
   Portals,
   ViewTracking,
+  ChangeTexture,
+  WebGPU,
+  FlushSync,
 }

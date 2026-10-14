@@ -1,11 +1,13 @@
 import * as React from 'react'
-import { createWebGLContext } from '@react-three/test-renderer/src/createWebGLContext'
+import type { GLViewProps } from 'expo-gl'
+import { WebGL2RenderingContext } from '@react-three/test-renderer/src/WebGL2RenderingContext'
 
-export const GLView = ({ onContextCreate }: { onContextCreate: (gl: any) => void }) => {
+export function GLView({ onContextCreate, ref, ...props }: GLViewProps & any) {
   React.useLayoutEffect(() => {
-    const gl = createWebGLContext({ width: 1280, height: 800 } as HTMLCanvasElement)
-    onContextCreate(gl)
-  }, [])
+    const gl = new WebGL2RenderingContext({ width: 1280, height: 800 } as HTMLCanvasElement)
+    gl.endFrameEXP = () => {}
+    onContextCreate(gl as any)
+  }, [onContextCreate])
 
-  return null
+  return React.createElement('glview', props)
 }

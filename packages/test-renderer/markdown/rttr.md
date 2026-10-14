@@ -63,7 +63,7 @@ Returns an object representing the rendered tree similar to [`react-test-rendere
 renderer.toGraph()
 ```
 
-Returns an object representing the [`scene graph`](https://threejsfundamentals.org/threejs/lessons/threejs-scenegraph.html). This will not include all elements such as ones that use `attach`.
+Returns an object representing the [`scene graph`](https://threejs.org/manual/#en/scenegraph). This will not include all elements such as ones that use `attach`.
 
 ### `fireEvent()` <a id="create-fireevent"></a>
 
@@ -71,7 +71,7 @@ Returns an object representing the [`scene graph`](https://threejsfundamentals.o
 renderer.fireEvent(testInstance, eventName, mockEventData)
 ```
 
-Native method to fire events on the specific part of the rendererd tree through passing an element within the tree and an event name. The third argument is appended to the [`MockSyntheticEvent`](#create-fireevent-mocksyntheticevent) passed to the event handler.
+Native method to fire events on the specific part of the rendered tree through passing an element within the tree and an event name. The third argument is appended to the [`MockSyntheticEvent`](#create-fireevent-mocksyntheticevent) passed to the event handler.
 
 Event names follow camelCase convention (e.g. `pointerUp`), or you can pass event handler name instead (e.g. `onPointerUp`).
 
@@ -125,7 +125,7 @@ Similar to the [`act()` in `react-test-renderer`](https://reactjs.org/docs/test-
 #### Act example (using jest)
 
 ```tsx
-import ReactThreeTestRenderer from 'react-three-test-renderer'
+import ReactThreeTestRenderer from '@react-three/test-renderer'
 
 const Mesh = () => {
   const meshRef = React.useRef()

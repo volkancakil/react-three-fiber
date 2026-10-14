@@ -1,98 +1,77 @@
 import * as React from 'react'
+import { act } from 'react'
 import * as THREE from 'three'
 
-import { extend, _roots as mockRoots, createRoot, reconciler, act as _act } from '@react-three/fiber'
+import { extend, _roots as mockRoots, createRoot, reconciler, Instance } from '@react-three/fiber'
 
 import { toTree } from './helpers/tree'
 import { toGraph } from './helpers/graph'
-import { is } from './helpers/is'
 
 import { createCanvas } from './createTestCanvas'
-import { createWebGLContext } from './createWebGLContext'
 import { createEventFirer } from './fireEvent'
 
-import type { MockScene } from './types/internal'
-import type { CreateOptions, Renderer, Act } from './types/public'
+import type { CreateOptions, Renderer } from './types/public'
 import { wrapFiber } from './createTestInstance'
+import { waitFor, WaitOptions } from './helpers/waitFor'
 
 // Extend catalogue for render API in tests.
-extend(THREE)
-
-const act = _act as unknown as Act
+extend(THREE as any)
 
 const create = async (element: React.ReactNode, options?: Partial<CreateOptions>): Promise<Renderer> => {
-  const canvas = createCanvas({
-    width: options?.width,
-    height: options?.height,
-    beforeReturn: (canvas) => {
-      //@ts-ignore
-      canvas.getContext = (type: string) => {
-        if (type === 'webgl' || type === 'webgl2') {
-          return createWebGLContext(canvas)
-        }
-      }
+  const canvas = createCanvas(options)
+
+  const _root = createRoot(canvas)
+  await _root.configure({
+    frameloop: 'never',
+    // TODO: remove and use default behavior
+    size: {
+      width: options?.width ?? 1280,
+      height: options?.height ?? 800,
+      top: 0,
+      left: 0,
     },
+    ...options,
+    events: undefined,
   })
 
-  const _fiber = canvas
+  const _store = mockRoots.get(canvas)!.store
 
-  const _root = createRoot(_fiber).configure({ frameloop: 'never', ...options, events: undefined })
-
-  let scene: MockScene = null!
-
-  await act(async () => {
-    scene = _root.render(element).getState().scene as unknown as MockScene
-  })
-
-  const _store = mockRoots.get(_fiber)!.store
+  await act(async () => _root.render(element))
+  const _scene = (_store.getState().scene as Instance<THREE.Scene>['object']).__r3f!
 
   return {
-    scene: wrapFiber(scene),
-    unmount: async () => {
+    scene: wrapFiber(_scene),
+    async unmount() {
       await act(async () => {
         _root.unmount()
       })
     },
-    getInstance: () => {
-      // this is our root
-      const fiber = mockRoots.get(_fiber)?.fiber
-      const root = {
-        /**
-         * we wrap our child in a Provider component
-         * and context.Provider, so do a little
-         * artificial dive to get round this and
-         * pass context.Provider as if it was the
-         * actual react root
-         */
-        current: fiber.current.child.child,
-      }
-      if (fiber.current.child.child) {
-        /**
-         * so this actually returns the instance
-         * the user has passed through as a Fiber
-         */
-        return reconciler.getPublicRootInstance(root)
-      } else {
-        return null
-      }
+    getInstance() {
+      // Bail if canvas is unmounted
+      if (!mockRoots.has(canvas)) return null
+
+      // Traverse fiber nodes for R3F root
+      const root = { current: mockRoots.get(canvas)!.fiber.current }
+      while (!root.current.child?.stateNode) root.current = root.current.child
+
+      // Return R3F instance from root
+      return reconciler.getPublicRootInstance(root)
     },
-    update: async (newElement: React.ReactNode) => {
-      const fiber = mockRoots.get(_fiber)?.fiber
-      if (fiber) {
-        await act(async () => {
-          reconciler.updateContainer(newElement, fiber, null, () => null)
-        })
-      }
-      return
+    async update(newElement: React.ReactNode) {
+      if (!mockRoots.has(canvas)) return console.warn('RTTR: attempted to update an unmounted root!')
+
+      await act(async () => {
+        _root.render(newElement)
+      })
     },
-    toTree: () => {
-      return toTree(scene)
+    toTree() {
+      return toTree(_scene)
     },
-    toGraph: () => {
-      return toGraph(scene)
+    toGraph() {
+      return toGraph(_scene)
     },
     fireEvent: createEventFirer(act, _store),
-    advanceFrames: async (frames: number, delta: number | number[] = 1) => {
+    async advanceFrames(frames: number, delta: number | number[] = 1) {
       const state = _store.getState()
       const storeSubscribers = state.internal.subscribers
 
@@ -100,7 +79,7 @@ const create = async (element: React.ReactNode, options?: Partial<CreateOptions>
 
       storeSubscribers.forEach((subscriber) => {
         for (let i = 0; i < frames; i++) {
-          if (is.arr(delta)) {
+          if (Array.isArray(delta)) {
             promises.push(
               new Promise(() => subscriber.ref.current(state, (delta as number[])[i] || (delta as number[])[-1])),
             )
@@ -115,5 +94,8 @@ const create = async (element: React.ReactNode, options?: Partial<CreateOptions>
   }
 }
 
+export { create, act, waitFor }
+export type { WaitOptions }
+
 export * as ReactThreeTest from './types'
-export default { create, act }
+export default { create, act, waitFor }

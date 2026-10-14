@@ -2,10 +2,10 @@ import * as React from 'react'
 import { useState, useEffect } from 'react'
 import { Canvas, useLoader } from '@react-three/fiber'
 import { suspend } from 'suspend-react'
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader'
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 
 // Suspends the scene for 2 seconds, simulating loading an async asset
-function AsyncComponent({ cacheKey }: any) {
+function AsyncComponent({ cacheKey }: { cacheKey: string }) {
   suspend(() => new Promise((res) => setTimeout(res, 2000)), [cacheKey])
   return null
 }
@@ -17,15 +17,17 @@ function SimulateError() {
 }
 
 export default function App() {
-  const [load, set] = useState(false)
+  const [load, setLoad] = useState(false)
+
   useEffect(() => {
-    const timeout = setTimeout(() => set(true), 3000)
+    const timeout = setTimeout(() => setLoad(true), 3000)
     return () => clearTimeout(timeout)
   }, [])
+
   return (
     <Canvas orthographic camera={{ position: [10, 10, 10], zoom: 100 }}>
-      <ambientLight />
-      <pointLight position={[10, 10, 5]} intensity={2} />
+      <ambientLight intensity={Math.PI} />
+      <pointLight decay={0} position={[10, 10, 5]} intensity={2} />
       <mesh>
         <boxGeometry />
         <meshStandardMaterial color="orange" />

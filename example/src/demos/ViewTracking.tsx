@@ -1,78 +1,93 @@
-import * as React from 'react'
-import * as THREE from 'three'
+import { Environment, OrbitControls, PerspectiveCamera, Preload, TransformControls, useGLTF } from '@react-three/drei'
 import {
-  useGLTF,
-  Preload,
-  OrbitControls,
-  PerspectiveCamera,
-  CameraShake,
-  TransformControls,
-  Environment,
-} from '@react-three/drei'
-import { Canvas, createPortal, useFrame, useThree } from '@react-three/fiber'
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
+  Canvas,
+  type ComputeFunction,
+  createPortal,
+  type ThreeElements,
+  type ThreeEvent,
+  useFrame,
+  useThree,
+} from '@react-three/fiber'
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import useRefs from 'react-use-refs'
+import * as THREE from 'three'
 
-function Soda(props: any) {
-  const ref = useRef()
+function useHover() {
+  const [hovered, setHovered] = useState(false)
+  const props = {
+    onPointerOver: (e: ThreeEvent<PointerEvent>) => {
+      e.stopPropagation()
+      setHovered(true)
+    },
+    onPointerOut: () => setHovered(false),
+  }
+  return [hovered, props] as const
+}
+
+function Soda(props: ThreeElements['group']) {
+  const ref = useRef<THREE.Group>(null!)
   const [hovered, spread] = useHover()
-  const { nodes, materials } = useGLTF(
-    'https://market-assets.fra1.cdn.digitaloceanspaces.com/market-assets/models/soda-bottle/model.gltf',
-  ) as any
+  const { meshes, materials } = useGLTF('/bottle.gltf')
+
   useFrame((state, delta) => (ref.current.rotation.y += delta))
+
   return (
     <group ref={ref} {...props} {...spread} dispose={null}>
-      <mesh geometry={nodes.Mesh_sodaBottle.geometry}>
+      <mesh geometry={meshes.Mesh_sodaBottle.geometry}>
         <meshStandardMaterial color={hovered ? 'red' : 'green'} roughness={0} metalness={0.8} envMapIntensity={2} />
       </mesh>
-      <mesh geometry={nodes.Mesh_sodaBottle_1.geometry} material={materials.red} material-envMapIntensity={0} />
+      <mesh geometry={meshes.Mesh_sodaBottle_1.geometry} material={materials.red} material-envMapIntensity={0} />
     </group>
   )
 }
 
-function useHover() {
-  const [hovered, hover] = useState(false)
-  return [hovered, { onPointerOver: (e) => (e.stopPropagation(), hover(true)), onPointerOut: () => hover(false) }]
-}
-
-function Duck(props: any) {
-  const { scene } = useGLTF(
-    'https://vazxmixjsiawhamofees.supabase.co/storage/v1/object/public/models/duck/model.gltf',
-  ) as any
+function Duck(props: ThreeElements['group']) {
+  const { scene } = useGLTF('https://vazxmixjsiawhamofees.supabase.co/storage/v1/object/public/models/duck/model.gltf')
   useFrame((state, delta) => (scene.rotation.x = scene.rotation.y += delta))
   return <primitive object={scene} {...props} />
 }
 
-function Candy(props: any) {
+function Candy(props: ThreeElements['group']) {
   const { scene } = useGLTF(
     'https://vazxmixjsiawhamofees.supabase.co/storage/v1/object/public/models/candy-bucket/model.gltf',
-  ) as any
+  )
   useFrame((state, delta) => (scene.rotation.z = scene.rotation.y += delta))
   return <primitive object={scene} {...props} />
 }
 
-function Flash(props: any) {
-  const { scene } = useGLTF(
-    'https://vazxmixjsiawhamofees.supabase.co/storage/v1/object/public/models/lightning/model.gltf',
-  )
+function Flash(props: ThreeElements['group']) {
+  const { scene } = useGLTF('/lightning.gltf')
   useFrame((state, delta) => (scene.rotation.y += delta))
   return <primitive object={scene} {...props} />
 }
 
-function Apple(props: any) {
-  const { scene } = useGLTF(
-    'https://market-assets.fra1.cdn.digitaloceanspaces.com/market-assets/models/apple-half/model.gltf',
-  )
+function Apple(props: ThreeElements['group']) {
+  const { scene } = useGLTF('/apple.gltf')
   useFrame((state, delta) => (scene.rotation.x = scene.rotation.y += delta))
   return <primitive object={scene} {...props} />
 }
 
-const isOrthographicCamera = (def: any): def is THREE.OrthographicCamera =>
+const isOrthographicCamera = (def: THREE.Camera): def is THREE.OrthographicCamera =>
   def && (def as THREE.OrthographicCamera).isOrthographicCamera
 const col = new THREE.Color()
 
-function Container({ scene, index, children, frames, rect, track }: any) {
+function Container({
+  scene,
+  index,
+  children,
+  frames,
+  rect,
+  track,
+}: {
+  scene: THREE.Scene
+  index: number
+  children: React.ReactNode
+  frames: number
+  rect: React.RefObject<DOMRect>
+  track: React.RefObject<HTMLElement>
+}) {
   const { camera } = useThree()
+
   let frameCount = 0
   useFrame((state) => {
     if (frames === Infinity || frameCount <= frames) {
@@ -96,9 +111,6 @@ function Container({ scene, index, children, frames, rect, track }: any) {
     }
 
     camera.updateProjectionMatrix()
-    if (left === undefined) {
-      debugger
-    }
     state.gl.setViewport(left, positiveYUpBottom, width, height)
     state.gl.setScissor(left, positiveYUpBottom, width, height)
     state.gl.setScissorTest(true)
@@ -116,6 +128,7 @@ function Container({ scene, index, children, frames, rect, track }: any) {
   const get = useThree((state) => state.get)
   const setEvents = useThree((state) => state.setEvents)
   const [ready, toggle] = useReducer(() => true, false)
+
   useEffect(() => {
     const old = get().events.connected
     setEvents({ connected: track.current })
@@ -127,10 +140,10 @@ function Container({ scene, index, children, frames, rect, track }: any) {
 }
 
 export const View = ({ track, index = 1, frames = Infinity, children, ...props }: any) => {
-  const rect = useRef<DOMRect>()
+  const rect = useRef<DOMRect>(null!)
   const [scene] = useState(() => new THREE.Scene())
 
-  const compute = useCallback(
+  const compute = useCallback<ComputeFunction>(
     (event, state) => {
       if (track.current && event.target === track.current) {
         if (!rect.current) return
@@ -157,8 +170,19 @@ export const View = ({ track, index = 1, frames = Infinity, children, ...props }
   )
 }
 
+function Scene() {
+  return (
+    <>
+      <ambientLight intensity={Math.PI} />
+      <pointLight decay={0} position={[20, 30, 10]} intensity={1} />
+      <pointLight decay={0} position={[-10, -10, -10]} color="blue" />
+      <Environment preset="dawn" />
+    </>
+  )
+}
+
 export default function App() {
-  const ref = useRef() as any
+  const ref = useRef<HTMLDivElement>(null!)
   const [view1, view2, view3, view4, view5] = useRefs() as any
   return (
     <div ref={ref} className="container">
@@ -243,16 +267,5 @@ export default function App() {
         <Preload all />
       </Canvas>
     </div>
-  )
-}
-
-function Scene() {
-  return (
-    <>
-      <ambientLight intensity={1} />
-      <pointLight position={[20, 30, 10]} intensity={1} />
-      <pointLight position={[-10, -10, -10]} color="blue" />
-      <Environment preset="dawn" />
-    </>
   )
 }

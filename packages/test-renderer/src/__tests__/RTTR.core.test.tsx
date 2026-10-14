@@ -1,12 +1,13 @@
+import { useFrame } from '@react-three/fiber'
 import * as React from 'react'
 import * as THREE from 'three'
 
 import ReactThreeTestRenderer from '../index'
 
-type ExampleComp = THREE.Mesh<THREE.BoxBufferGeometry, THREE.Material>
+type ExampleComp = THREE.Mesh<THREE.BoxGeometry, THREE.Material>
 
 describe('ReactThreeTestRenderer Core', () => {
-  it('renders a simple component', async () => {
+  it('renders JSX', async () => {
     const Mesh = () => {
       return (
         <mesh>
@@ -15,12 +16,28 @@ describe('ReactThreeTestRenderer Core', () => {
         </mesh>
       )
     }
-    const renderer = await ReactThreeTestRenderer.create(
-      <React.Suspense fallback={null}>
-        <Mesh />
-      </React.Suspense>,
-    )
 
+    const renderer = await ReactThreeTestRenderer.create(<Mesh />)
+    expect(renderer.scene.children[0].type).toEqual('Mesh')
+    await renderer.update(<Mesh />)
+    expect(renderer.scene.children[0].type).toEqual('Mesh')
+  })
+
+  it('renders a simple component with hooks', async () => {
+    const Mesh = () => {
+      const meshRef = React.useRef<THREE.Mesh<THREE.BoxGeometry, THREE.MeshBasicMaterial>>(null)
+      useFrame(() => void (meshRef.current!.position.x += 0.01))
+      return (
+        <mesh>
+          <boxGeometry args={[2, 2]} />
+          <meshBasicMaterial />
+        </mesh>
+      )
+    }
+
+    const renderer = await ReactThreeTestRenderer.create(<Mesh />)
+    expect(renderer.scene.children[0].type).toEqual('Mesh')
+    await renderer.update(<Mesh />)
     expect(renderer.scene.children[0].type).toEqual('Mesh')
   })
 
@@ -29,7 +46,7 @@ describe('ReactThreeTestRenderer Core', () => {
       const [name, setName] = React.useState<string>()
 
       React.useLayoutEffect(() => {
-        ;(React as any).startTransition(() => void setName('mesh'))
+        React.startTransition(() => void setName('mesh'))
       })
 
       return (
@@ -82,19 +99,7 @@ describe('ReactThreeTestRenderer Core', () => {
 
     const renderer = await ReactThreeTestRenderer.create(<Parent />)
 
-    expect(renderer.toGraph()).toEqual([
-      {
-        type: 'Group',
-        name: '',
-        children: [
-          {
-            type: 'Mesh',
-            name: '',
-            children: [],
-          },
-        ],
-      },
-    ])
+    expect(renderer.toGraph()).toMatchSnapshot()
   })
 
   it('renders some basics with an update', async () => {
@@ -167,7 +172,7 @@ describe('ReactThreeTestRenderer Core', () => {
   })
 
   it('exposes the instance', async () => {
-    class Mesh extends React.PureComponent {
+    class Instance extends React.PureComponent {
       state = { standardMat: false }
 
       handleStandard() {
@@ -184,51 +189,17 @@ describe('ReactThreeTestRenderer Core', () => {
       }
     }
 
-    const renderer = await ReactThreeTestRenderer.create(<Mesh />)
+    const renderer = await ReactThreeTestRenderer.create(<Instance />)
 
-    expect(renderer.toTree()).toEqual([
-      {
-        type: 'mesh',
-        props: {
-          args: [],
-        },
-        children: [
-          { type: 'boxGeometry', props: { args: [2, 2] }, children: [] },
-          {
-            type: 'meshBasicMaterial',
-            props: {
-              args: [],
-            },
-            children: [],
-          },
-        ],
-      },
-    ])
+    expect(renderer.toTree()).toMatchSnapshot()
 
-    const instance = renderer.getInstance() as Mesh
+    const instance = renderer.getInstance() as Instance
 
     await ReactThreeTestRenderer.act(async () => {
       instance.handleStandard()
     })
 
-    expect(renderer.toTree()).toEqual([
-      {
-        type: 'mesh',
-        props: {
-          args: [],
-        },
-        children: [
-          { type: 'boxGeometry', props: { args: [2, 2] }, children: [] },
-          {
-            type: 'meshStandardMaterial',
-            props: {
-              args: [],
-            },
-            children: [],
-          },
-        ],
-      },
-    ])
+    expect(renderer.toTree()).toMatchSnapshot()
   })
 
   it('updates children', async () => {
@@ -278,7 +249,7 @@ describe('ReactThreeTestRenderer Core', () => {
         log.push('render ' + this.props.name)
         return (
           <mesh>
-            <boxBufferGeometry args={[2, 2]} />
+            <boxGeometry args={[2, 2]} />
             <meshStandardMaterial />
           </mesh>
         )
@@ -316,15 +287,7 @@ describe('ReactThreeTestRenderer Core', () => {
     )
     const renderer = await ReactThreeTestRenderer.create(<Component />)
 
-    expect(renderer.toTree()).toEqual([
-      {
-        type: 'group',
-        props: {
-          args: [],
-        },
-        children: [],
-      },
-    ])
+    expect(renderer.toTree()).toMatchSnapshot()
   })
 
   it('correctly builds a tree', async () => {
@@ -346,7 +309,7 @@ describe('ReactThreeTestRenderer Core', () => {
       return (
         <mesh>
           <bufferGeometry attach="geometry">
-            <bufferAttribute attach="attributes-position" array={vertices} count={vertices.length / 3} itemSize={3} />
+            <bufferAttribute attach="attributes-position" args={[vertices, 3]} />
           </bufferGeometry>
           <meshBasicMaterial attach="material" color="hotpink" />
         </mesh>
@@ -388,10 +351,100 @@ describe('ReactThreeTestRenderer Core', () => {
     expect(renderer.toTree()).toMatchSnapshot()
   })
 
+  it('correctly searches through multiple levels in regular objects', async () => {
+    // Create a deep tree: group -> mesh -> mesh -> mesh
+    const renderer = await ReactThreeTestRenderer.create(
+      <group name="root-group">
+        <mesh name="level1-mesh">
+          <boxGeometry />
+          <meshBasicMaterial color="red" />
+          <mesh name="level2-mesh">
+            <boxGeometry />
+            <meshBasicMaterial color="green" />
+            <mesh name="level3-mesh">
+              <boxGeometry />
+              <meshBasicMaterial color="blue" />
+            </mesh>
+          </mesh>
+        </mesh>
+      </group>,
+    )
+
+    // Test from the root
+    const allMeshes = renderer.scene.findAllByType('Mesh')
+    expect(allMeshes.length).toBe(3) // Should find all three meshes
+
+    // Test from an intermediate node
+    const topMesh = renderer.scene.find((node) => node.props.name === 'level1-mesh')
+    const nestedMeshes = topMesh.findAllByType('Mesh')
+    expect(nestedMeshes.length).toBe(2) // Should find the two nested meshes
+
+    // Find a deeply nested mesh from an intermediate node by property
+    const level3 = topMesh.find((node) => node.props.name === 'level3-mesh')
+    expect(level3).toBeDefined()
+    expect(level3.type).toBe('Mesh')
+  })
+
+  it('Can search from retrieved primitive Instance', async () => {
+    const group = new THREE.Group()
+    group.name = 'PrimitiveGroup'
+
+    const childMesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: 'red' }))
+    childMesh.name = 'PrimitiveChildMesh'
+    group.add(childMesh)
+
+    const nestedMesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: 'red' }))
+    nestedMesh.name = 'PrimitiveNestedChildMesh'
+    childMesh.add(nestedMesh)
+
+    const renderer = await ReactThreeTestRenderer.create(<primitive object={group} />)
+
+    const foundGroup = renderer.scene.findByType('Group')
+    const foundMesh = foundGroup.children[0]
+    const foundNestedMesh = foundMesh.findByType('Mesh')
+    expect(foundNestedMesh).toBeDefined()
+  })
+
   it('root instance and refs return the same value', async () => {
     let refInst = null
     const renderer = await ReactThreeTestRenderer.create(<mesh ref={(ref) => (refInst = ref)} />)
     const root = renderer.getInstance() // this will be Mesh
     expect(root).toEqual(refInst)
+  })
+
+  it('handles primitive objects and their children correctly in toGraph', async () => {
+    // Create a component with both regular objects and primitives with children
+    const PrimitiveTestComponent = () => {
+      // Create a THREE.js group with mesh children
+      const group = new THREE.Group()
+      group.name = 'PrimitiveGroup'
+
+      const childMesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: 'red' }))
+      childMesh.name = 'PrimitiveChildMesh'
+      group.add(childMesh)
+
+      // Add a nested group to test deeper hierarchies
+      const nestedGroup = new THREE.Group()
+      nestedGroup.name = 'NestedGroup'
+      const nestedMesh = new THREE.Mesh(new THREE.SphereGeometry(0.5), new THREE.MeshBasicMaterial({ color: 'blue' }))
+      nestedMesh.name = 'NestedMesh'
+      nestedGroup.add(nestedMesh)
+      group.add(nestedGroup)
+
+      return (
+        <>
+          <mesh name="RegularMesh">
+            <boxGeometry args={[2, 2]} />
+            <meshBasicMaterial />
+          </mesh>
+
+          <primitive object={group} />
+        </>
+      )
+    }
+
+    const renderer = await ReactThreeTestRenderer.create(<PrimitiveTestComponent />)
+
+    expect(renderer.toGraph()).toMatchSnapshot()
   })
 })
